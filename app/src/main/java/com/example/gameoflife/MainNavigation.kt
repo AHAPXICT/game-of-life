@@ -2,6 +2,10 @@ package com.example.gameoflife
 
 import android.R.attr.name
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -16,11 +20,12 @@ enum class Screen {
 @Composable
 fun MainNavigation() {
     val navController = rememberNavController()
+    val gameData: MutableState<GameData> = remember { mutableStateOf(GameData()) }
     NavHost(
         navController = navController,
-        startDestination = Screen.Game.name
+        startDestination = Screen.Main.name
     ) {
-        composable(Screen.Main.name) { Main(navController) }
-        composable(Screen.Game.name) { Game(navController) }
+        composable(Screen.Main.name) { Main(navController ,gameData) }
+        composable(Screen.Game.name) { Game(navController, gameData.value) }
     }
 }

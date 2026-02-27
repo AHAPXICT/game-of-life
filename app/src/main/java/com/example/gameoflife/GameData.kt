@@ -1,14 +1,36 @@
 package com.example.gameoflife
 
-import java.util.Date
-
 data class GameData(
-    val id: Int,
-    val name: String?,
-    val width: Int,
-    val height: Int,
-    val mapData: String?,
-    val created: Date?,
-    val modified: Date?
+    var id: Int? = null,
+    var name: String = "JustGame",
+    var rows: Int = 10,
+    var cols: Int = 5,
+    var mapData: String? = null,
+    var created: String? = null,
+    var saveType: SaveType = SaveType.None
 )
 
+enum class SaveType {
+    Local,
+    Server,
+    File,
+    None
+}
+
+data class InsertPayload(
+    val width: Int,
+    val height: Int,
+    val name: String,
+    val mapData: String?,
+    val created: String?
+)
+data class UpdatePayload(
+    val id: Int,
+    val width: Int,
+    val height: Int,
+    val name: String,
+    val mapData: String?,
+)
+data class DeletePayload(
+    val id: Int
+)

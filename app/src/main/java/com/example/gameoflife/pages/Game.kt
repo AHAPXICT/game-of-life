@@ -1,6 +1,11 @@
 package com.example.gameoflife.pages
 
 import GameField
+import android.R.attr.height
+import android.R.attr.name
+import android.util.Log
+import android.util.Log.e
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,21 +26,33 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
+import com.example.gameoflife.API
+import com.example.gameoflife.DeletePayload
+import com.example.gameoflife.GameData
+import com.example.gameoflife.HttpMethod
+import com.example.gameoflife.InsertPayload
+import com.example.gameoflife.LocalDB
 import com.example.gameoflife.R
+import com.example.gameoflife.SaveType
 import com.example.gameoflife.Screen
+import com.example.gameoflife.UpdatePayload
 import com.example.gameoflife.components.DialogButton
 import com.example.gameoflife.components.DialogTextField
+import com.example.gameoflife.components.Parsers
 import com.example.gameoflife.components.ValidateNumberTextField
 import com.example.gameoflife.ui.theme.GreenColor
 import com.example.gameoflife.ui.theme.GreyColor
@@ -43,16 +60,29 @@ import com.example.gameoflife.ui.theme.PrimaryColor
 import com.example.gameoflife.ui.theme.RedColor
 import com.example.gameoflife.ui.theme.SecondaryColor
 import com.example.gameoflife.ui.theme.WhiteColor
+import com.google.gson.Gson
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-@Preview
 @Composable
-fun Game(navController: NavController = rememberNavController()) {
+fun Game(navController: NavController = rememberNavController(), gameData: GameData) {
     val isSettingsDialogVisible = remember { mutableStateOf(false) }
     var isSaveDialogVisible by remember { mutableStateOf(false) }
 
-    val rows: MutableState<Int> = remember { mutableIntStateOf(10) }
-    val columns: MutableState<Int> = remember { mutableIntStateOf(5) }
+    val context = LocalContext.current
+    val scope = CoroutineScope(Dispatchers.Main)
+
+    val rows: MutableState<Int> = remember { mutableIntStateOf(gameData.rows) }
+    val columns: MutableState<Int> = remember { mutableIntStateOf(gameData.cols) }
+
+    val cells = remember(gameData.id) {
+        mutableStateMapOf<Pair<Int, Int>, Boolean>().apply {
+            putAll(Parsers.stringToMap(gameData.mapData))
+        }
+    }
 
     Column(
         Modifier.background(color = GreyColor)
@@ -94,8 +124,33 @@ fun Game(navController: NavController = rememberNavController()) {
             }
         }
 
-        GameField(modifier = Modifier.weight(0.86f), rows = rows, cols = columns)
+        GameField(modifier = Modifier.weight(0.86f), rows = rows, cols = columns, cells = cells)
 
+        fun deleteClick() {
+            val db = LocalDB.getInstance(context.applicationContext)
+            if (gameData.saveType == SaveType.Local) {
+                try {
+                    db.deleteRow(gameData.id ?: -1)
+                }
+                catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(context, "Exception while deleting", Toast.LENGTH_LONG).show()
+                }
+            }
+            else if(gameData.saveType == SaveType.Server) {
+                val payload = DeletePayload(gameData.id!!)
+                scope.launch {
+                    val apiResponse = withContext(Dispatchers.IO) {
+                        API.callApi(
+                            "/deleteRow",
+                            httpMethod = HttpMethod.POST,
+                            requestModel = payload,
+                        )
+                    }
+                }
+            }
+            navController.navigate(Screen.Main.name)
+        }
         Box(
             modifier = Modifier
                 .background(
@@ -107,8 +162,76 @@ fun Game(navController: NavController = rememberNavController()) {
         )
         {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                ActionElement("Delete", R.drawable.outline_delete_24, {})
+                ActionElement("Delete", R.drawable.outline_delete_24, { deleteClick() })
                 ActionElement("Save", R.drawable.outline_save_as_24, { isSaveDialogVisible = true })
+            }
+        }
+    }
+
+    fun saveLocal() {
+        isSaveDialogVisible = false
+        gameData.mapData = Parsers.mapToString(cells)
+
+        val db = LocalDB.getInstance(context.applicationContext)
+        if (gameData.saveType == SaveType.Local && gameData.id != null) {
+            db.updateRow(gameData)
+        } else {
+            if (gameData.saveType == SaveType.None)
+            {
+                gameData.saveType = SaveType.Local
+                db.addRow(gameData)
+            }
+            else {
+                Toast.makeText(context, "File already saved in another way", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun saveOnServer() {
+        isSaveDialogVisible = false
+        gameData.mapData = Parsers.mapToString(cells)
+
+        if (gameData.saveType == SaveType.Server && gameData.id != null) {
+            scope.launch {
+                val apiResponse = withContext(Dispatchers.IO) {
+                    val updatePayload = UpdatePayload(
+                        id = gameData.id!!,
+                        width = gameData.cols,
+                        height = gameData.rows,
+                        name = gameData.name,
+                        mapData = gameData.mapData
+                    )
+                    API.callApi(
+                        "/updateRow",
+                        httpMethod = HttpMethod.POST,
+                        requestModel = updatePayload,
+                    )
+                }
+            }
+        } else {
+            if (gameData.saveType == SaveType.None)
+            {
+                gameData.saveType = SaveType.Server
+                val addPayload = InsertPayload(
+                    width = gameData.cols,
+                    height = gameData.rows,
+                    name = gameData.name,
+                    mapData = gameData.mapData,
+                    created = gameData.created
+                )
+
+                scope.launch {
+                    val apiResponse = withContext(Dispatchers.IO) {
+                        API.callApi(
+                            "/addRow",
+                            httpMethod = HttpMethod.POST,
+                            requestModel = addPayload
+                        )
+                    }
+                }
+            }
+            else {
+                Toast.makeText(context, "File already saved in another way", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -118,15 +241,16 @@ fun Game(navController: NavController = rememberNavController()) {
             onDismiss = { isSettingsDialogVisible.value = false },
             rows,
             columns,
-            isSettingsDialogVisible
+            isSettingsDialogVisible,
+            gameData
         )
     }
     if (isSaveDialogVisible) {
         SaveDialog(
             onDismiss = { isSaveDialogVisible = false },
-            saveOnServer = { isSaveDialogVisible = false },
-            saveOnFile = { isSaveDialogVisible = false },
-            saveLocal = { isSaveDialogVisible = false }
+            saveOnServer = { saveOnServer() },
+           // saveOnFile = { isSaveDialogVisible = false },
+            saveLocal = { saveLocal() }
         )
     }
 }
@@ -153,9 +277,10 @@ fun SettingsDialog(
     onDismiss: () -> Unit,
     rows: MutableState<Int>,
     columns: MutableState<Int>,
-    isSettingsDialogVisible: MutableState<Boolean>
+    isSettingsDialogVisible: MutableState<Boolean>,
+    gameData: GameData
 ) {
-    val name = rememberTextFieldState("")
+    val name = rememberTextFieldState(gameData.name)
     val rowsCount = remember { mutableStateOf("${rows.value}") }
     val columnsCount = remember { mutableStateOf("${columns.value}") }
 
@@ -182,6 +307,10 @@ fun SettingsDialog(
                 if (!hasRowsFieldErrors.value && !hasColumnsFieldErrors.value) {
                     rows.value = rowsCount.value.toInt()
                     columns.value = columnsCount.value.toInt()
+
+                    gameData.name = name.text.toString()
+                    gameData.cols = columnsCount.value.toInt()
+                    gameData.rows = columnsCount.value.toInt()
                     isSettingsDialogVisible.value = false
                 }
             }, GreenColor, 0.48f, "Save")
@@ -193,7 +322,7 @@ fun SettingsDialog(
 fun SaveDialog(
     onDismiss: () -> Unit,
     saveLocal: () -> Unit,
-    saveOnFile: () -> Unit,
+  //  saveOnFile: () -> Unit,
     saveOnServer: () -> Unit,
 ) {
     AlertDialog(
@@ -203,7 +332,7 @@ fun SaveDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                DialogButton(saveOnFile, SecondaryColor, text = "Save on file")
+                //DialogButton(saveOnFile, SecondaryColor, text = "Save on file")
                 DialogButton(saveOnServer, SecondaryColor, text = "Save on server")
                 DialogButton(saveLocal, SecondaryColor, text = "Save local")
             }

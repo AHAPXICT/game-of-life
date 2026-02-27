@@ -43,7 +43,9 @@ dependencies {
     implementation(libs.androidx.material3)
     val nav_version = "2.9.5"
 
+    implementation("com.google.code.gson:gson:2.13.2")
     implementation("androidx.navigation:navigation-compose:$nav_version")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

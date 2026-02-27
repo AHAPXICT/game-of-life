@@ -1,4 +1,3 @@
-import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -27,17 +26,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.min
 
-@Preview
 @Composable
 fun GameField(
     modifier: Modifier = Modifier,
-    rows: MutableState<Int> = mutableIntStateOf(28),
-    cols: MutableState<Int> = mutableIntStateOf(14)
+    rows: MutableState<Int>,
+    cols: MutableState<Int>,
+    cells: MutableMap<Pair<Int, Int>, Boolean>
 ) {
-
-    val cells = remember {
-        mutableStateMapOf<Pair<Int, Int>, Boolean>()
-    }
 
     var isGameActive by remember { mutableStateOf(false) }
 
@@ -194,7 +189,6 @@ fun gameTact(map: MutableMap<Pair<Int, Int>, Boolean>, rows: Int, cols: Int) {
     neighboursMap.keys.forEach { key ->
         neighboursMap.put(key, neighboursCount(key.first, key.second, rows - 1, cols - 1, map))
     }
-    neighboursMap.keys.forEach { Log.d("deb", it.first.toString() + ", " + it.second.toString() + ": " + neighboursMap.getValue(it).toString()) }
 
     neighboursMap.keys.forEach { key ->
         val count = neighboursMap.getValue(key)
@@ -227,7 +221,6 @@ fun neighboursCount(
 
             if (i == row && j == col) continue
 
-            Log.d("d", "$curCol, $curRow: $count")
             count += if (map.getValue(Pair(curRow, curCol))) 1 else 0
         }
     }
